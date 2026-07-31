@@ -1,5 +1,5 @@
 import styles from './style.css'
-import { useScoped } from 'virtual:scoped-css'
+import { useScoped } from 'vite-plugin-scoped-css/runtime'
 
 function App() {
   useScoped(styles)

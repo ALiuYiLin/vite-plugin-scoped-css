@@ -106,17 +106,24 @@ function scopedBabelPlugin(
             ImportDeclaration(impPath: any) {
               const source: string = impPath.node.source.value;
 
-              // Handle virtual:scoped-css → remove useScoped import (will be unused)
-              if (source === 'virtual:scoped-css') {
-                const specifiers = impPath.node.specifiers || [];
-                const used = specifiers.some((spec: any) => {
-                  const binding = impPath.scope.getBinding(
-                    spec.local?.name ?? spec.exported?.name,
-                  );
-                  if (!binding) return false;
-                  return (binding.referencePaths || []).length > 0;
-                });
-                if (!used) {
+              // Handle useScoped import sources → remove once calls are stripped
+              if (
+                source === 'virtual:scoped-css' ||
+                source === 'vite-plugin-scoped-css' ||
+                source === 'vite-plugin-scoped-css/runtime'
+              ) {
+                impPath.node.specifiers = impPath.node.specifiers.filter(
+                  (spec: any) => {
+                    const binding = impPath.scope.getBinding(
+                      spec.local?.name ?? spec.exported?.name,
+                    );
+                    if (!binding) return true;
+                    const refCount = (binding.referencePaths || []).length;
+                    // keep specifier only if still referenced
+                    return refCount > 0;
+                  },
+                );
+                if (impPath.node.specifiers.length === 0) {
                   impPath.remove();
                 }
                 return;
@@ -222,6 +229,10 @@ function scopedBabelPlugin(
     };
   };
 }
+
+/* ─── Runtime re-export ──────────────────── */
+
+export { useScoped } from './runtime';
 
 /* ─── Plugin export ────────────────────────── */
 

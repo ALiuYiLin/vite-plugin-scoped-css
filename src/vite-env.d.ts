@@ -1,10 +1,6 @@
 /// <reference types="vite/client" />
 
-declare module 'virtual:scoped-css' {
-  export function useScoped(styles: string): void;
-}
-
-// CSS default-import returns the hash string (used by scoped plugin)
+// Vite 8 declares '*.css' as an empty module — fill in the default export
 declare module '*.css' {
   const css: string;
   export default css;
