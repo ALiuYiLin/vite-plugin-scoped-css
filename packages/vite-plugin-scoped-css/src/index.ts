@@ -95,13 +95,14 @@ function scopedBabelPlugin(
   _filename: string,
   resolveImportPath: (importSource: string) => string,
 ) {
-  const scopedHashes: string[] = [];
+  // Map: enclosing function node → hashes belonging to that function
+  const fnHashes = new Map<any, string[]>();
 
   return function babelPlugin() {
     return {
       visitor: {
         Program(programPath: any) {
-          // --- Pass 1: detect useScoped calls & associated imports ---
+          // --- Pass 1: detect useScoped calls, associate with enclosing function ---
           programPath.traverse({
             ImportDeclaration(impPath: any) {
               const source: string = impPath.node.source.value;
@@ -119,7 +120,6 @@ function scopedBabelPlugin(
                     );
                     if (!binding) return true;
                     const refCount = (binding.referencePaths || []).length;
-                    // keep specifier only if still referenced
                     return refCount > 0;
                   },
                 );
@@ -131,10 +131,10 @@ function scopedBabelPlugin(
 
               // Only process CSS imports
               if (!source.endsWith('.css')) return;
-              if (source.includes('?scoped')) return; // already processed
+              if (source.includes('?scoped')) return;
 
               const specifiers = impPath.node.specifiers;
-              if (specifiers.length === 0) return; // side-effect import, skip
+              if (specifiers.length === 0) return;
 
               for (const spec of specifiers) {
                 const binding = impPath.scope.getBinding(
@@ -144,6 +144,7 @@ function scopedBabelPlugin(
 
                 let usedByUseScoped = false;
                 const refsToRemove: any[] = [];
+                let enclosingFn: any = null;
 
                 for (const ref of binding.referencePaths || []) {
                   const callExpr = ref.parentPath;
@@ -152,6 +153,8 @@ function scopedBabelPlugin(
                     callExpr.node.callee?.name === 'useScoped'
                   ) {
                     usedByUseScoped = true;
+                    // Find the enclosing function for this useScoped call
+                    enclosingFn = callExpr.getFunctionParent();
                     // Remove useScoped(x) expression statement
                     const stmt = callExpr.findParent(
                       (p: any) =>
@@ -167,21 +170,24 @@ function scopedBabelPlugin(
                 if (usedByUseScoped) {
                   const absPath = resolveImportPath(source);
                   const hash = getHash(absPath);
-                  scopedHashes.push(hash);
+
+                  // Associate hash with the enclosing function
+                  if (enclosingFn) {
+                    const list = fnHashes.get(enclosingFn.node) ?? [];
+                    list.push(hash);
+                    fnHashes.set(enclosingFn.node, list);
+                  }
 
                   // Rewrite import source to include ?scoped
                   impPath.node.source.value = source + '?scoped';
                   impPath.node.source.extra = undefined;
 
                   // Remove the used specifier (styles), keep others
-                  const filtered =
-                    impPath.node.specifiers.filter(
-                      (s: any) => s !== spec,
-                    );
+                  const filtered = impPath.node.specifiers.filter(
+                    (s: any) => s !== spec,
+                  );
                   impPath.node.specifiers = filtered;
 
-                  // If no specifiers remain, make it a side-effect import
-                  // import './style.css?scoped'
                   if (filtered.length === 0) {
                     impPath.node.importKind = 'value';
                   }
@@ -195,11 +201,9 @@ function scopedBabelPlugin(
             },
           });
 
-          if (scopedHashes.length === 0) return;
+          if (fnHashes.size === 0) return;
 
-          // --- Pass 2: add data-v-hash to all JSX elements ---
-          const dataAttrs = scopedHashes.map((h) => `data-v-${h}`);
-
+          // --- Pass 2: add data-v-hash per enclosing function ---
           programPath.traverse({
             JSXElement(jsxPath: any) {
               if (
@@ -207,20 +211,30 @@ function scopedBabelPlugin(
               )
                 return;
 
+              // Find which function encloses this JSX element
+              const enclosingFn = jsxPath.getFunctionParent();
+              if (!enclosingFn) return;
+
+              const hashes = fnHashes.get(enclosingFn.node);
+              if (!hashes || hashes.length === 0) return;
+
+              const dataAttrs = hashes.map((h: string) => `data-v-${h}`);
               const opening = jsxPath.node.openingElement;
               const attrs: any[] = opening.attributes || [];
 
-              const existing = attrs.some(
-                (attr: any) =>
-                  attr.type === 'JSXAttribute' &&
-                  dataAttrs.includes(attr.name?.name),
-              );
-              if (existing) return;
-
               for (const attrName of dataAttrs) {
-                opening.attributes.push(
-                  t.jsxAttribute(t.jsxIdentifier(attrName), t.stringLiteral('')),
+                const already = attrs.some(
+                  (a: any) =>
+                    a.type === 'JSXAttribute' && a.name?.name === attrName,
                 );
+                if (!already) {
+                  opening.attributes.push(
+                    t.jsxAttribute(
+                      t.jsxIdentifier(attrName),
+                      t.stringLiteral(''),
+                    ),
+                  );
+                }
               }
             },
           });

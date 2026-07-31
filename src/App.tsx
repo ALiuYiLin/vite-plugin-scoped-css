@@ -1,5 +1,6 @@
-import { useScoped } from 'vite-plugin-scoped-css'
+import { useScoped } from 'vite-plugin-scoped-css/runtime'
 import styles from './style.css'
+import infoStyle from  './style2.css'
 
 
 function App() {
@@ -11,10 +12,16 @@ function App() {
       <p className="red">This text is red (scoped)</p>
       <div className="box">
         <p>Content inside box (scoped)</p>
+        <MyInfos></MyInfos>
       </div>
       <p className="red">This is also red (scoped)</p>
     </div>
   )
+}
+
+function MyInfos(){
+  useScoped(infoStyle)
+  return <div><p>Content inside box (scoped)</p></div>
 }
 
 export default App
