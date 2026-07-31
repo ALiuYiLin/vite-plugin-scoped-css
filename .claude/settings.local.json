@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "Bash(npx create-vite@latest *)",
+      "Bash(mv temp-project/* temp-project/.* .)",
+      "Bash(rmdir temp-project *)",
+      "Bash(npm install *)",
+      "Bash(node *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(grep -oP '.{0,50}data-v-1bc337a0.{0,50}')",
+      "Bash(grep -oP '.{0,30}data-v-19c20bfb.{0,60}')"
+    ]
+  }
+}

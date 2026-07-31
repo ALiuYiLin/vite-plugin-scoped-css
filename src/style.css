@@ -1,0 +1,14 @@
+.red {
+  color: red;
+  font-size: 24px;
+}
+
+.title {
+  font-weight: bold;
+}
+
+.box {
+  border: 2px solid blue;
+  padding: 20px;
+  margin: 10px;
+}
