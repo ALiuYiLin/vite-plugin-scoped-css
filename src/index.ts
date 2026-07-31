@@ -20,6 +20,10 @@ function getHash(absPath: string): string {
 
 function transformScopedCSS(css: string, hash: string): string {
   const attr = `[data-v-${hash}]`;
+  return _transformBlocks(css, attr);
+}
+
+function _transformBlocks(css: string, attr: string): string {
   const result: string[] = [];
   let i = 0;
 
@@ -33,7 +37,7 @@ function transformScopedCSS(css: string, hash: string): string {
     const beforeBrace = css.slice(i, braceIdx);
     const trimmed = beforeBrace.trim();
 
-    // Skip @keyframes / @font-face / @import / @charset / @namespace
+    // Completely skip these at-rules (don't scope anything inside)
     if (/@(keyframes|font-face|import|charset|namespace)/i.test(trimmed)) {
       const end = findMatchingBrace(css, braceIdx);
       result.push(css.slice(i, end + 1));
@@ -42,10 +46,18 @@ function transformScopedCSS(css: string, hash: string): string {
     }
 
     const closeIdx = findMatchingBrace(css, braceIdx);
-    const body = css.slice(braceIdx, closeIdx + 1);
-    const transformedSelector = transformSelector(beforeBrace, attr);
+    const body = css.slice(braceIdx, closeIdx + 1); // includes { ... }
+    const innerContent = body.slice(1, -1);           // what's inside {}
 
-    result.push(transformedSelector + body);
+    // For @media / @supports / @container etc., recursively transform inside
+    if (/^@/.test(trimmed)) {
+      const transformedInner = _transformBlocks(innerContent, attr);
+      result.push(beforeBrace + '{' + transformedInner + '}');
+    } else {
+      // Regular selector rule — scope the selector
+      const transformedSelector = transformSelector(beforeBrace, attr);
+      result.push(transformedSelector + body);
+    }
     i = closeIdx + 1;
   }
 
