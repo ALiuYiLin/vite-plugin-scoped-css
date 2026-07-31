@@ -1,0 +1,4 @@
+/* Banner 组件 — 绿色主题（再次故意同名） */
+.title { font-weight: bold; font-size: 22px; }
+.text  { margin: 6px 0; color: #1e8449; }
+.box   { border: 2px dashed #27ae60; padding: 14px; margin: 8px 0; border-radius: 8px; background: #eafaf1; }

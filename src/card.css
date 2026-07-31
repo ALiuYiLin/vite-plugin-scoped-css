@@ -1,0 +1,4 @@
+/* Card 组件 — 蓝色主题（故意和 App 用同名 class） */
+.title { font-weight: bold; font-size: 20px; }
+.text  { margin: 6px 0; color: #2471a3; }
+.box   { border: 2px solid #3498db; padding: 10px; margin: 6px 0; border-radius: 4px; background: #eaf2f8; }

@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-scoped-css",
-  "version": "0.1.5",
+  "version": "0.1.9",
   "type": "module",
   "description": "Vue-like scoped CSS for React — compile-time CSS isolation",
   "repository": {
@@ -25,7 +25,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/types.d.ts','dist/types.d.ts')\"",
-    "dev": "tsc -p tsconfig.build.json --watch"
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "release": "npm run build && npm version patch && npm publish"
   },
   "dependencies": {
     "@babel/generator": "^8.0.0",
