@@ -4,19 +4,22 @@
   "private": true,
   "type": "module",
   "description": "Vue-like scoped CSS for React — compile-time CSS isolation",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/types.d.ts",
-      "default": "./src/index.ts"
-    },
-    "./runtime": {
-      "types": "./src/runtime.ts",
-      "default": "./src/runtime.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
   "files": [
-    "src"
+    "dist"
   ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/types.d.ts','dist/types.d.ts')\"",
+    "dev": "tsc -p tsconfig.build.json --watch"
+  },
   "dependencies": {
     "@babel/generator": "^8.0.0",
     "@babel/parser": "^8.0.4",

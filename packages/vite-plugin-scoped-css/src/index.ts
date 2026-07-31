@@ -232,7 +232,7 @@ function scopedBabelPlugin(
 
 /* ─── Runtime re-export ──────────────────── */
 
-export { useScoped } from './runtime';
+export { useScoped } from './runtime.js';
 
 /* ─── Plugin export ────────────────────────── */
 
