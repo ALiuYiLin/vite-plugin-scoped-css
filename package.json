@@ -20,6 +20,11 @@
       "default": "./dist/runtime.js"
     }
   },
+  "typesVersions": {
+    "*": {
+      "runtime": ["./dist/runtime.d.ts"]
+    }
+  },
   "files": [
     "dist"
   ],
