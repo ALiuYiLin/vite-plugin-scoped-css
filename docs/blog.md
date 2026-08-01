@@ -1,6 +1,6 @@
-# 为 React 打造 Vue-like Scoped CSS —— 一个零运行时开销的编译时方案
+# React 新一代样式隔离方案 —— 编译时、零运行时、原生写法
 
-> 如果你在 React 项目里写过 CSS，你一定经历过样式冲突的噩梦。本文将介绍如何通过一个 Vite 插件，在编译时实现 Vue `scoped` 级别的样式隔离，且完全零运行时开销。
+> React 样式隔离一直是个老大难——CSS Modules 写法繁琐，CSS-in-JS 有运行时开销，Tailwind 类名太长。本文介绍一种新一代方案：编译时自动隔离，零运行时，保留原生 `className="red"` 写法。
 
 ---
 
