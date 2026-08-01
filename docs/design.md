@@ -21,9 +21,8 @@ style.css ──→ [scoped-css:css] → [Vite CSS pipeline]      ──→ CSS 
 
 ```
 vitePluginScopedCSS()
-├── Plugin A: scoped-css:virtual     → 虚拟模块 virtual:scoped-css（兼容旧用法）
-├── Plugin B: scoped-css:css         → CSS 变换（enforce: pre）
-└── Plugin C: scoped-css:jsx         → JSX 变换（enforce: pre）
+├── Plugin A: scoped-css:css         → CSS 变换（enforce: pre）
+└── Plugin B: scoped-css:jsx         → JSX 变换（enforce: pre）
 ```
 
 ### 包入口分离

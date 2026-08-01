@@ -10,7 +10,9 @@
       "Bash(npx tsc *)",
       "Bash(npm run *)",
       "Bash(grep -oP '.{0,50}data-v-1bc337a0.{0,50}')",
-      "Bash(grep -oP '.{0,30}data-v-19c20bfb.{0,60}')"
+      "Bash(grep -oP '.{0,30}data-v-19c20bfb.{0,60}')",
+      "Bash(pnpm build *)",
+      "Bash(pnpm test *)"
     ]
   }
 }

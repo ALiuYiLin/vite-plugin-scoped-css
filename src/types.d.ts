@@ -22,8 +22,3 @@ declare module 'vite-plugin-scoped-css' {
 declare module 'vite-plugin-scoped-css/runtime' {
   export function useScoped(styles: string): void;
 }
-
-// Virtual module — backward compat
-declare module 'virtual:scoped-css' {
-  export function useScoped(styles: string): void;
-}

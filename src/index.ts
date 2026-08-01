@@ -121,7 +121,6 @@ function scopedBabelPlugin(
 
               // Handle useScoped import sources → remove once calls are stripped
               if (
-                source === 'virtual:scoped-css' ||
                 source === 'vite-plugin-scoped-css' ||
                 source === 'vite-plugin-scoped-css/runtime'
               ) {
@@ -272,26 +271,7 @@ export default function vitePluginScopedCSS(): Plugin[] {
     return resolved.split('?')[0].replace(/\\/g, '/');
   }
 
-  /* ── Plugin A: Virtual module ─── */
-  const virtualPlugin: Plugin = {
-    name: 'scoped-css:virtual',
-    resolveId(id) {
-      if (id === 'virtual:scoped-css') return '\0virtual:scoped-css';
-      return null;
-    },
-    load(id) {
-      if (id === '\0virtual:scoped-css') {
-        return `
-          export function useScoped(_styles) {
-            // compile-time marker — removed during build
-          }
-        `;
-      }
-      return null;
-    },
-  };
-
-  /* ── Plugin B: CSS transform ─── */
+  /* ── Plugin A: CSS transform ─── */
   const cssPlugin: Plugin = {
     name: 'scoped-css:css',
     enforce: 'pre',
@@ -316,7 +296,7 @@ export default function vitePluginScopedCSS(): Plugin[] {
     },
   };
 
-  /* ── Plugin C: JSX / TSX transform ─── */
+  /* ── Plugin B: JSX / TSX transform ─── */
   const jsxPlugin: Plugin = {
     name: 'scoped-css:jsx',
     enforce: 'pre',
@@ -366,5 +346,5 @@ export default function vitePluginScopedCSS(): Plugin[] {
     },
   };
 
-  return [virtualPlugin, cssPlugin, jsxPlugin];
+  return [cssPlugin, jsxPlugin];
 }
