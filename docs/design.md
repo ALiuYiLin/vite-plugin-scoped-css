@@ -1,174 +1,197 @@
-● 从三个层面来讲：CSS 编译变换、JSX 编译变换、Hash 一致性保证。
+# vite-plugin-scoped-css 设计文档
 
-  ---
-  整体数据流
+## 总览
 
-  源文件                         Vite 插件管线                    产物
-  ───────                       ──────────────                   ────
-  App.tsx  ──→ [scoped-css:jsx]  ──→ [@vitejs/plugin-react] ──→ JS bundle
-  style.css ──→ [scoped-css:css] ──→ [Vite CSS pipeline]      ──→ CSS bundle
+这是一个 Vite 插件，为 React 提供类似 Vue `scoped` 的样式隔离——**纯编译时**，零运行时开销。
 
-  关键是插件通过 enforce: 'pre' 确保在 React 插件和 Vite CSS 处理器之前运行。
+```
+源文件                           Vite 插件管线                      产物
+───────                         ──────────────                     ────
+App.tsx  ──→ [scoped-css:jsx] → [@vitejs/plugin-react]  ──→ JS bundle
+style.css ──→ [scoped-css:css] → [Vite CSS pipeline]      ──→ CSS bundle
+```
 
-  ---
-  一、JSX 端：Babel AST 变换
+关键设计：`enforce: 'pre'` 确保在 React 插件和 Vite CSS 处理器之前运行。
 
-  这是最核心的部分。当 Vite 处理 App.tsx 时，插件用 Babel 把源码解析成 AST，然后做三件事：
+---
 
-  1. 找到 useScoped(x) 并追踪导入源
+## 架构
 
-  import styles from './style.css'      ← ImportDeclaration
-         ↓
-         │  binding: { referencePaths: [...] }
-         ↓
-  useScoped(styles)                     ← CallExpression
-         ↓
-         │  callee.name === 'useScoped'
-         │  arguments[0] → binding → ImportDeclaration → './style.css'
-         ↓
-  计算 hash('./style.css') = "19c20bfb"
+插件是一个返回 3 个 Vite 插件数组的工厂函数：
 
-  关键代码逻辑：
+```
+vitePluginScopedCSS()
+├── Plugin A: scoped-css:virtual     → 虚拟模块 virtual:scoped-css（兼容旧用法）
+├── Plugin B: scoped-css:css         → CSS 变换（enforce: pre）
+└── Plugin C: scoped-css:jsx         → JSX 变换（enforce: pre）
+```
 
-  // 遍历所有 import 语句
-  ImportDeclaration(impPath) {
-    const source = impPath.node.source.value; // './style.css'
+### 包入口分离
 
-    for (const spec of specifiers) {
-      const binding = impPath.scope.getBinding(spec.local.name);
-      // binding.referencePaths 包含所有引用这个变量的地方
+为**避免 Babel（~600KB）被打包进浏览器**，包拆成两个入口：
 
-      for (const ref of binding.referencePaths) {
-        const callExpr = ref.parentPath; // 引用出现在 useScoped(styles) 的 arguments 中
-        if (callExpr.node.callee?.name === 'useScoped') {
-          // 找到了！这个 import 是 scoped CSS
-          usedByUseScoped = true;
-        }
-      }
-    }
-  }
+| 入口 | 用在哪 | 依赖 |
+|------|--------|------|
+| `vite-plugin-scoped-css` | `vite.config.ts`（Node.js 端） | Babel |
+| `vite-plugin-scoped-css/runtime` | 组件代码（浏览器端） | 零依赖，~10 字节 |
 
-  2. 改写产物
+```tsx
+// 组件中只导入 runtime——零开销
+import { useScoped } from 'vite-plugin-scoped-css/runtime';
+```
 
-  找到后执行三个修改：
+Babel 插件在编译时会**完整移除**这个 import 和所有 `useScoped()` 调用，所以即使不拆 runtime 路径也不会有 Babel 入包，但拆开更安全。
 
-  ┌────────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────┐
-  │                              修改                              │                          原因                           │
-  ├────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
-  │ import styles from './style.css' → import './style.css?scoped' │ 去掉 default 导出声明，添加 ?scoped 标记让 CSS 插件识别 │
-  ├────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
-  │ 删除 useScoped(styles) 语句                                    │ 纯编译时标记，运行时不需要                              │
-  ├────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
-  │ 所有 JSX 元素加 data-v-{hash}=""                               │ 让元素能被 CSS 选择器命中                               │
-  └────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────┘
+---
 
-  // 添加 data 属性到 JSX 元素
-  JSXElement(jsxPath) {
-    opening.attributes.push(
-      t.jsxAttribute(t.jsxIdentifier('data-v-19c20bfb'), t.stringLiteral(''))
-    );
-  }
+## 一、JSX 变换（Babel AST）
 
-  3. 为什么用 Babel 而不是正则
+### 整体流程
 
-  useScoped(styles) 可以出现在任何位置——箭头函数、函数声明、嵌套作用域。正则无法可靠地处理 JSX 嵌套结构。Babel 的 scope.getBinding() 能精确追踪标识符的引用链。
+```
+App.tsx 源码
+  │
+  ├── 快速跳过检查（无 useScoped / .css 则跳过）
+  │
+  ├── @babel/parser → AST
+  │
+  ├── Pass 1：遍历 ImportDeclaration
+  │   ├── 找到 import styles from './style.css'
+  │   ├── 通过 scope.getBinding() 追踪 styles 的引用
+  │   ├── 发现 useScoped(styles) → 标记为 scoped
+  │   ├── 计算 hash = MD5(CSS 文件路径).slice(0, 8)
+  │   ├── 记录 callExpr.getFunctionParent() → 函数节点的映射
+  │   │   Map { <App 函数节点> → [hash1], <Card 函数节点> → [hash2] }
+  │   ├── 改写 import 为 './style.css?scoped'
+  │   └── 移除 useScoped() 调用语句
+  │
+  ├── Pass 2：遍历 JSXElement
+  │   ├── jsxPath.getFunctionParent() → 函数节点
+  │   ├── fnHashes.get(函数节点) → 该函数专属的 hash 列表
+  │   └── 添加 data-v-hash 属性
+  │
+  └── @babel/generator → 变换后代码
+```
 
-  ---
-  二、CSS 端：选择器改写
+### 为什么用 Babel？
 
-  CSS 插件拦截带 ?scoped 查询参数的 CSS 文件，逐字符扫描，找到每个规则块，给选择器追加属性选择器：
+- `scope.getBinding()` 精确追踪标识符引用链，跨作用域定位
+- `getFunctionParent()` 按函数隔离 hash，实现**按组件 scoped**
+- 可以同时做"添加属性"和"删除语句"两个操作
 
-  输入：                         输出：
-  .red { color: red; }    →    .red[data-v-19c20bfb] { color: red; }
+正则无法可靠处理 JSX 嵌套和跨作用域引用。
 
-  .red, .blue { ... }     →    .red[data-v-19c20bfb], .blue[data-v-19c20bfb] { ... }
+### 函数级隔离
 
-  @media screen {         →    @media screen {
-    .red { ... }                   .red[data-v-19c20bfb] { ... }
-  }                             }
+这是与初版最重要的差异。初版把所有 hash 加到文件内**全部 JSX 元素**，导致同文件不同组件的样式互相污染。
 
-  核心是对花括号的深度追踪：
+```tsx
+// 源码
+function App()   { useScoped(stylesA); return <div className="x">A</div>; }
+function Card()  { useScoped(stylesB); return <div className="x">B</div>; }
 
-  function findMatchingBrace(css, openIdx) {
-    let depth = 0;
-    for (let i = openIdx; i < css.length; i++) {
-      if (css[i] === '{') depth++;
-      if (css[i] === '}') { depth--; if (depth === 0) return i; }
-    }
-  }
+// 产物
+function App()   { return <div className="x" data-v-hashA="">A</div>; }
+function Card()  { return <div className="x" data-v-hashB="">B</div>; }
+//                          ↑ App 不带 hashB，Card 不带 hashA ↑
+```
 
-  这样能正确处理嵌套规则和 @media 查询——@media 本身不被修改，但其内部的 .red 仍会被改写。
+用 `Map<FunctionNode, hash[]>` 精确关联。
 
-  跳过的规则：
-  - @keyframes / @font-face — 它们的选择器是 from、to、百分比，不需要 scoped
-  - @import / @charset — 元规则
-  - :root / :host — 全局伪类
+---
 
-  ---
-  三、Hash 一致性：路径归一化
+## 二、CSS 变换
 
-  这是最容易出错的环节。CSS 端和 JSX 端必须算出同一个 hash，否则样式匹配失败。
+拦截带 `?scoped` 查询参数的 CSS 文件，逐字符扫描规则块，追加属性选择器。
 
-  JSX 端:  path.resolve('D:/code3/react-demo/src', './style.css')
-           → 'D:\code3\react-demo\src\style.css'   ← Windows 反斜杠
+### 核心算法
 
-  CSS 端:  Vite 传过来的 module id
-           → 'D:/code3/react-demo/src/style.css'    ← Vite 统一用正斜杠
+```
+transformScopedCSS(css, hash)
+  ├── while 扫描每个 {
+  │   ├── @keyframes / @font-face / @import → 完整跳过
+  │   ├── @media / @supports / @container → 递归处理内部
+  │   └── 普通选择器 → transformSelector 追加 [data-v-hash]
+  └── 返回变换后 CSS
+```
 
-  不同分隔符 → 不同字符串 → 不同 MD5 → 样式失效。
+### 选择器变换规则
 
-  修复方式：两端都做 replace(/\\/g, '/') 归一化到正斜杠。
+```
+输入                              输出
+.red { }                   →     .red[data-v-xxx] { }
+.a, .b { }                 →     .a[data-v-xxx], .b[data-v-xxx] { }
+@media screen { .x { } }   →     @media screen { .x[data-v-xxx] { } }
+```
 
-  两边统一为: 'D:/code3/react-demo/src/style.css'
-  MD5 前 8 位: 19c20bfb  ✅ 一致
+### 跳过的规则
 
-  ---
-  四、编译时 vs 运行时
+- `@keyframes` / `@font-face` / `@import` / `@charset` / `@namespace` — 整体跳过
+- `from` / `to` / `N%` — keyframe 选择器
+- `:root` / `:host` — 全局伪类
 
-  最终产物里 useScoped 的引用次数是 0——它只在编译期间存在，作用是告诉编译器"这个组件需要 scoped 样式"。运行时开销为零。
+---
 
-  编译前:
-    import styles from './style.css'
-    import { useScoped } from 'virtual:scoped-css'
+## 三、Hash 一致性
 
-    function App() {
-      useScoped(styles)              ← 标记，编译时移除
-      return <div className="red" />  ← 编译时加 data-v-19c20bfb
-    }
+JSX 端和 CSS 端**独立计算 hash**，必须完全一致。
 
-  编译后:
-    import './style.css?scoped'       ← 副作用导入，加载 CSS
-    // useScoped 导入和调用都被删除
+```
+JSX 端:  path.resolve(tsxDir, './style.css') → 归一化正斜杠 → MD5
+CSS 端:  Vite 的 module id → 归一化正斜杠         → MD5
 
-    function App() {
-      return <div className="red" data-v-19c20bfb="" />
-    }
+归一化: path.replace(/\\/g, '/').split('?')[0]
+```
 
-  CSS 和 JSX 变换的效果在构建时已经固化到产物里，不需要任何运行时配合。
+如果两端路径不同（Windows 反斜杠 vs Vite 正斜杠），hash 不匹配，样式彻底失效。
 
-  ---
-  五、三个插件的协作
+---
 
-  Vite 的插件数组是按顺序注册的：
+## 四、编译时 vs 运行时
 
-  export default defineConfig({
-    plugins: [
-      vitePluginScopedCSS(),  // 返回 3 个插件: [virtual, css, jsx]
-      react(),                // @vitejs/plugin-react
-    ],
-  })
+所有变换在 **Vite build** 阶段完成，产物中零运行时代码。
 
-  Vite 内部会按 enforce 字段排序执行顺序：
+```
+// ── 编译前 ──
+import { useScoped } from 'vite-plugin-scoped-css/runtime';
+import styles from './style.css';
 
-                   enforce: 'pre'    默认 enforce     enforce: 'post'
-                          │               │                │
-  scoped-css:css ─────────┤               │                │
-  scoped-css:jsx ─────────┤               │                │
-                          └─ 先执行 ──→   react()    ──→  Vite 内置 CSS
-                                          │
-                            scoped-css:virtual (resolveId/load 不参与 enforce)
+function App() {
+  useScoped(styles);
+  return <div className="red">hello</div>;
+}
 
-  - scoped-css:jsx 先把 TSX 中的 JSX 改写好，然后 react() 把改写后的 JSX 转成 React.createElement 调用
-  - scoped-css:css 先把选择器改写好，然后 Vite 内置的 lightningcss 做压缩
+// ── 编译后 ──
+import './style.css?scoped';
 
-  两者互不依赖，顺序靠 enforce: 'pre' 保证。
+function App() {
+  return <div className="red" data-v-19c20bfb="">hello</div>;
+}
+```
+
+`useScoped` 完全消失——它是编译时标记，无运行时痕迹。
+
+---
+
+## 五、构建流程
+
+```
+pnpm build
+  ├── tsc -p tsconfig.build.json    → src/*.ts → dist/*.js + dist/*.d.ts
+  └── cp src/types.d.ts dist/       → 环境声明复制到 dist
+```
+
+- `tsconfig.json` — 开发类型检查（`noEmit: true`）
+- `tsconfig.build.json` — 构建配置（extends 基础，`noEmit: false`, `declaration: true`）
+
+---
+
+## 六、发布入口
+
+```
+package.json exports:
+  "."           → dist/index.js    + dist/index.d.ts   （插件工厂，vite.config.ts 用）
+  "./runtime"   → dist/runtime.js  + dist/runtime.d.ts （useScoped，组件代码用）
+```
+
+`files: ["dist"]` — src / tests / docs 不参与发布。
