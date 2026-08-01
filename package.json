@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-scoped-css",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "type": "module",
   "description": "Vue-like scoped CSS for React — compile-time CSS isolation",
   "repository": {
