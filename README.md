@@ -37,7 +37,10 @@ export default defineConfig({
 TypeScript 项目需要在 `vite-env.d.ts` 中添加类型引用：
 
 ```ts
-/// <reference types="vite-plugin-scoped-css/dist/types" />
+declare module '*.css' {
+  const css: string;
+  export default css;
+}
 ```
 
 ## 使用

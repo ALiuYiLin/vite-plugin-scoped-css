@@ -267,7 +267,7 @@ npm install vite-plugin-scoped-css
 import vitePluginScopedCSS from 'vite-plugin-scoped-css';
 
 export default {
-  plugins: [vitePluginScopedCSS()],
+  plugins: [vitePluginScopedCSS(),react()],
 };
 ```
 
